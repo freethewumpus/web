@@ -36,7 +36,7 @@ spec:
               value: dns
             - name: RETHINK_HOST
               value: rethinkdb-rethinkdb-cluster
-            - name: RETHINKDB_PASSWORD
+            - name: RETHINK_PASSWORD
               value: rethinkdb
             - name: REDIS_HOST
               value: freethewumpus-redis:6379
