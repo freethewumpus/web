@@ -45,11 +45,6 @@ spec:
                 secretKeyRef:
                   name: freethewumpus
                   key: secret_access_key
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: freethewumpus
-                  key: secret_access_key
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -65,5 +60,7 @@ spec:
                 secretKeyRef:
                   name: freethewumpus
                   key: endpoint
+            - name: S3_REGION
+              value: sfo2
       imagePullSecrets:
         - name: gitlab

@@ -145,11 +145,11 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 								headers.Add("Content-Type", "application/json")
 								fmt.Print(err)
 
+								w.WriteHeader(500)
 								_, err := w.Write([]byte(`{
 									"success": false,
 									"error": "Failed to upload to the specified S3 bucket."
 								}`))
-								w.WriteHeader(500)
 								if err != nil {
 									log.Print(err)
 									return
