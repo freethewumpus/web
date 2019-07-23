@@ -61,6 +61,6 @@ spec:
                   name: freethewumpus
                   key: endpoint
             - name: S3_REGION
-              value: sfo2
+              value: fra1
       imagePullSecrets:
         - name: gitlab
