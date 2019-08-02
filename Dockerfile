@@ -1,9 +1,9 @@
-FROM golang:1.12 AS builder
+FROM golang:alpine AS builder
+RUN apk --no-cache add gcc g++ make git
 WORKDIR /go/src/web
 COPY . .
 RUN go get .
-ENV CGO_ENABLED=0
-RUN go build -o app .
+RUN GOOS=linux go build -o app .
 
 FROM alpine
 EXPOSE 8000
