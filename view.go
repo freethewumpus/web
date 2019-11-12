@@ -72,8 +72,8 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 		if err == nil {
 			EncryptedResult := false
-			if strings.HasPrefix(*result.ContentType, "encrypted/") {
-				ptr := strings.TrimLeft(*result.ContentType, "encrypted/")
+			if strings.HasPrefix(*result.ContentType, "encrypted-") {
+				ptr := strings.TrimLeft(*result.ContentType, "encrypted-")
 				ContentType = &ptr
 				EncryptedResult = true
 			}

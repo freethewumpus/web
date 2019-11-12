@@ -136,11 +136,12 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 							FileSplit := strings.Split(header.Filename, ".")
 							FileType := strings.ToLower(FileSplit[len(FileSplit)-1])
 							MimeType := mime.TypeByExtension(FileType)
+							FileCount := header.Size
 							DecryptionBit := ""
 							var FileReader io.ReadSeeker
 							FileReader = file
 							if encryption {
-								MimeType = "encrypted/" + MimeType
+								MimeType = "encrypted-" + MimeType
 								DecryptionKey := CreateFilename("cccccccccccccccccccccccccccccccc")
 								DecryptionBit = "?key=" + DecryptionKey
 								c, _ := aes.NewCipher([]byte(DecryptionKey))
@@ -160,6 +161,7 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 									return
 								}
 								b = gcm.Seal(nonce, nonce, b, nil)
+								FileCount = int64(len(b))
 								FileReader = bytes.NewReader(b)
 							}
 							UploadParams := &s3.PutObjectInput{
@@ -168,7 +170,7 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 								ContentType:        &MimeType,
 								Body:               FileReader,
 								ACL:                aws.String("private"),
-								ContentLength:      aws.Int64(header.Size),
+								ContentLength:      &FileCount,
 								ContentDisposition: aws.String("attachment"),
 							}
 							_, err := svc.PutObject(UploadParams)
