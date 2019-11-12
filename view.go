@@ -1,16 +1,20 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"strings"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/julienschmidt/httprouter"
-	"io"
-	"net/http"
-	"os"
-	"strings"
 )
 
 func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
@@ -40,18 +44,18 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		} else {
 			bucket = S3Bucket{
 				SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-				Bucket: os.Getenv("S3_BUCKET"),
-				AccessKeyId: os.Getenv("AWS_ACCESS_KEY_ID"),
-				Endpoint: os.Getenv("S3_ENDPOINT"),
-				Region: os.Getenv("S3_REGION"),
+				Bucket:          os.Getenv("S3_BUCKET"),
+				AccessKeyId:     os.Getenv("AWS_ACCESS_KEY_ID"),
+				Endpoint:        os.Getenv("S3_ENDPOINT"),
+				Region:          os.Getenv("S3_REGION"),
 			}
 		}
 
 		StaticCredential := credentials.NewStaticCredentials(bucket.AccessKeyId, bucket.SecretAccessKey, "")
 		s3sess := session.Must(session.NewSession(&aws.Config{
-			Endpoint: &bucket.Endpoint,
+			Endpoint:    &bucket.Endpoint,
 			Credentials: StaticCredential,
-			Region: &bucket.Region,
+			Region:      &bucket.Region,
 		}))
 
 		ImageName := strings.Split(p.ByName("image"), ".")[0]
@@ -60,15 +64,59 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 		GetParams := &s3.GetObjectInput{
 			Bucket: &bucket.Bucket,
-			Key: &Key,
+			Key:    &Key,
 		}
 
 		result, err := svc.GetObject(GetParams)
+		ContentType := result.ContentType
 
 		if err == nil {
-			_, err := io.Copy(w, result.Body)
-			if err != nil {
-				panic(err)
+			EncryptedResult := false
+			if strings.HasPrefix(*result.ContentType, "encrypted/") {
+				ptr := strings.TrimLeft(*result.ContentType, "encrypted/")
+				ContentType = &ptr
+				EncryptedResult = true
+			}
+
+			if EncryptedResult {
+				Key, ok := r.URL.Query()["key"]
+				if !ok || len(Key[0]) < 1 {
+					w.Write([]byte("Key not found."))
+					return
+				}
+				b, err := ioutil.ReadAll(result.Body)
+				if err != nil {
+					panic(err)
+				}
+				c, err := aes.NewCipher([]byte(Key[0]))
+				if err != nil {
+					w.Write([]byte("Key invalid."))
+					return
+				}
+				gcm, err := cipher.NewGCM(c)
+				if err != nil {
+					w.Write([]byte("Key invalid."))
+					return
+				}
+				NonceSize := gcm.NonceSize()
+				if len(b) < NonceSize {
+					w.Write([]byte("Key invalid."))
+					return
+				}
+				nonce, ciphertext := b[:NonceSize], b[NonceSize:]
+				b, err = gcm.Open(nil, nonce, ciphertext, nil)
+				if err != nil {
+					w.Write([]byte("Key invalid."))
+					return
+				}
+				r.Response.Header.Set("Content-Type", *ContentType)
+				w.Write(b)
+			} else {
+				r.Response.Header.Set("Content-Type", *ContentType)
+				_, err := io.Copy(w, result.Body)
+				if err != nil {
+					panic(err)
+				}
 			}
 		} else if result != nil && result.Body == nil {
 			w.WriteHeader(404)

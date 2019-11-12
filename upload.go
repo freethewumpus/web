@@ -1,17 +1,24 @@
 package main
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/julienschmidt/httprouter"
+	"io"
+	"io/ioutil"
 	"log"
 	"mime"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/julienschmidt/httprouter"
 )
 
 func SendUnauthorized(w http.ResponseWriter) {
@@ -67,7 +74,7 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		if auth == "" {
 			SendUnauthorized(w)
 		} else {
-			domain, uid, NamingScheme, UserSuccess := GetUser(auth)
+			domain, uid, NamingScheme, encryption, UserSuccess := GetUser(auth)
 			if !UserSuccess {
 				SendUnauthorized(w)
 			} else {
@@ -97,14 +104,13 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 						} else {
 							bucket = S3Bucket{
 								SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-								Bucket: os.Getenv("S3_BUCKET"),
-								AccessKeyId: os.Getenv("AWS_ACCESS_KEY_ID"),
-								Endpoint: os.Getenv("S3_ENDPOINT"),
-								Region: os.Getenv("S3_REGION"),
+								Bucket:          os.Getenv("S3_BUCKET"),
+								AccessKeyId:     os.Getenv("AWS_ACCESS_KEY_ID"),
+								Endpoint:        os.Getenv("S3_ENDPOINT"),
+								Region:          os.Getenv("S3_REGION"),
 							}
 						}
-						if (!DomainInformation.Public && !StringInSlice(uid, DomainInformation.Whitelist)) || (
-							DomainInformation.Public && StringInSlice(uid, DomainInformation.Blacklist)) {
+						if (!DomainInformation.Public && !StringInSlice(uid, DomainInformation.Whitelist)) || (DomainInformation.Public && StringInSlice(uid, DomainInformation.Blacklist)) {
 							headers := w.Header()
 							headers.Add("Content-Type", "application/json")
 							w.WriteHeader(403)
@@ -121,22 +127,48 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 							filename := CreateFilename(NamingScheme)
 							StaticCredential := credentials.NewStaticCredentials(bucket.AccessKeyId, bucket.SecretAccessKey, "")
 							s3sess := session.Must(session.NewSession(&aws.Config{
-								Endpoint: &bucket.Endpoint,
+								Endpoint:    &bucket.Endpoint,
 								Credentials: StaticCredential,
-								Region: &bucket.Region,
+								Region:      &bucket.Region,
 							}))
 							svc := s3.New(s3sess)
 							key := fmt.Sprintf("%s/%s", domain, filename)
 							FileSplit := strings.Split(header.Filename, ".")
-							FileType := strings.ToLower(FileSplit[len(FileSplit) - 1])
+							FileType := strings.ToLower(FileSplit[len(FileSplit)-1])
 							MimeType := mime.TypeByExtension(FileType)
+							DecryptionBit := ""
+							var FileReader io.ReadSeeker
+							FileReader = file
+							if encryption {
+								MimeType = "encrypted/" + MimeType
+								DecryptionKey := CreateFilename("cccccccccccccccccccccccccccccccc")
+								DecryptionBit = "?key=" + DecryptionKey
+								c, _ := aes.NewCipher([]byte(DecryptionKey))
+								gcm, _ := cipher.NewGCM(c)
+								nonce := make([]byte, gcm.NonceSize())
+								io.ReadFull(rand.Reader, nonce)
+								b, err := ioutil.ReadAll(file)
+								if err != nil {
+									w.WriteHeader(500)
+									_, err := w.Write([]byte(`{
+										"success": false,
+										"error": "Failed to download the buffer."
+									}`))
+									if err != nil {
+										log.Print(err)
+									}
+									return
+								}
+								b = gcm.Seal(nonce, nonce, b, nil)
+								FileReader = bytes.NewReader(b)
+							}
 							UploadParams := &s3.PutObjectInput{
-								Bucket: &bucket.Bucket,
-								Key: &key,
-								ContentType: &MimeType,
-								Body: file,
-								ACL: aws.String("private"),
-								ContentLength: aws.Int64(header.Size),
+								Bucket:             &bucket.Bucket,
+								Key:                &key,
+								ContentType:        &MimeType,
+								Body:               FileReader,
+								ACL:                aws.String("private"),
+								ContentLength:      aws.Int64(header.Size),
 								ContentDisposition: aws.String("attachment"),
 							}
 							_, err := svc.PutObject(UploadParams)
@@ -159,8 +191,8 @@ func Upload(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 								headers.Add("Content-Type", "application/json")
 								_, err := w.Write([]byte(fmt.Sprintf(`{
 									"success": true,
-									"url": "https://%s/%s.%s"
-								}`, domain, filename, FileType)))
+									"url": "https://%s/%s.%s%s"
+								}`, domain, filename, FileType, DecryptionBit)))
 								if err != nil {
 									log.Print(err)
 									w.WriteHeader(500)

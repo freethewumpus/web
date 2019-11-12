@@ -10,6 +10,7 @@ type User struct {
 	Domain string `gorethink:"domain"`
 	Tokens []string `gorethink:"tokens"`
 	NamingScheme string `gorethink:"naming_scheme"`
+	Encryption bool `gorethink:"encryption"`
 }
 
 type S3Bucket struct {
