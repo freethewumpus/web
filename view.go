@@ -70,7 +70,12 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		result, err := svc.GetObject(GetParams)
 
 		if err == nil {
-			if strings.HasPrefix(*result.ContentType, "encrypted-") {
+			ContentTypePtr := result.ContentType
+			if ContentTypePtr == nil {
+				x := ""
+				ContentTypePtr = &x
+			}
+			if strings.HasPrefix(*ContentTypePtr, "encrypted-") {
 				Key, ok := r.URL.Query()["key"]
 				if !ok || len(Key[0]) < 1 {
 					w.Write([]byte("Key not found."))
