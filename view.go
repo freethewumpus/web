@@ -68,17 +68,9 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		}
 
 		result, err := svc.GetObject(GetParams)
-		ContentType := result.ContentType
 
 		if err == nil {
-			EncryptedResult := false
 			if strings.HasPrefix(*result.ContentType, "encrypted-") {
-				ptr := strings.TrimLeft(*result.ContentType, "encrypted-")
-				ContentType = &ptr
-				EncryptedResult = true
-			}
-
-			if EncryptedResult {
 				Key, ok := r.URL.Query()["key"]
 				if !ok || len(Key[0]) < 1 {
 					w.Write([]byte("Key not found."))
@@ -109,10 +101,8 @@ func View(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 					w.Write([]byte("Key invalid."))
 					return
 				}
-				r.Response.Header.Set("Content-Type", *ContentType)
 				w.Write(b)
 			} else {
-				r.Response.Header.Set("Content-Type", *ContentType)
 				_, err := io.Copy(w, result.Body)
 				if err != nil {
 					panic(err)
